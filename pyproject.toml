@@ -1,0 +1,79 @@
+[project]
+name = "esp32-dev"
+version = "0.1.0"
+description = "ESP32 MicroPython development environment"
+requires-python = ">=3.12,<3.13"
+
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "esptool>=5.2.0",
+    "microdot>=2.6.0",
+    "micropython-esp32-stubs>=1.27.0.post1",
+    "mpremote>=1.27.0",
+    "pre-commit>=3.7.0",
+]
+
+[tool.uv]
+package = false
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.black]
+line-length = 120
+
+[tool.ruff]
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+# - E501 line lengths: yapf and isort already handle them
+# - B905 zip(*, strict=True): strict was introduced in Python 3.10+
+ignore = ["E501", "B905"]
+
+[tool.ruff.lint.per-file-ignores]
+# do not check unused imports in __init__.py files (they expose module features)
+"__init__.py" = ["E402", "F401"]
+
+[tool.isort]
+py_version=38
+# maintain consistency with other quality tools
+line_length = 120
+# consistency with ruff-format: mode 3
+# from third_party import (
+#     lib1,
+#     lib2,
+#     [...]
+#     libn,
+# )
+multi_line_output = 3
+include_trailing_comma = true
+# TESTS->known_tests: create a specific section for imports of tests modules
+# (this is the reason why isort is still used alongside ruff-format)
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER", "TESTS"]
+known_tests = ["tests"]
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = [
+    "feat",
+    "fix",
+    "ci",
+    "doc",
+    "refactor",
+    "style",
+    "clean",
+    "test",
+    "build"
+]
+minor_tags = ["feat"]
+patch_tags = ["fix", "doc", "ci", "test", "refactor", "style", "clean", "build"]
+
+[tool.semantic_release.remote]
+ignore_token_for_push = true
