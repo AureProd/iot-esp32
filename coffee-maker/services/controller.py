@@ -12,6 +12,8 @@ import config
 
 
 class CoffeeController:
+    BUTTON_DEBOUNCE_MS = 200
+
     def __init__(self):
         # Hardware initialization
         self.led = machine.Pin(config.LED_PIN, machine.Pin.OUT)
