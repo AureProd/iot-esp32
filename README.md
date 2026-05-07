@@ -1,53 +1,69 @@
-# ESP 32 base commands
+# 🚀 ESP32 MicroPython Development Guide
 
-## To setup local env
+This repository provides source code and utility scripts to flash MicroPython firmware and deploy applications onto ESP32 and ESP32-C3 boards. 🛠️
 
-Here are the commands to install your development environment :
+## 💻 Local Environment Setup
+
+Follow these commands to prepare your local development environment:
 
 ```bash
-# To install Python dependencies
+# To install Python dependencies using uv
 uv sync --dev
 
 # To initialize codebase linters
 uv run pre-commit install
 
-# To run codebase linters
+# To run linters manually on all files
 uv run pre-commit run -a
 ```
 
-## To reset flashed image
+## ⚡ MicroPython Firmware Flashing
+
+The automated `flash.sh` script erases the board memory and flashes the appropriate MicroPython version based on your chip architecture.
+
+**Usage:** `./flash.sh [chip_type] [target_port]`
 
 ```bash
-# To list connected esp 32 port
-ls /dev/ttyUSB* /dev/ttyACM*
+# To flash an ESP32-C3 (default chip, uses port /dev/ttyACM0)
+./flash.sh
 
-# To errase current esp 32 image
-uvx esptool --chip esp32 --port /dev/ttyUSB0 erase-flash
-uvx esptool --chip esp32c3 --port /dev/ttyACM0 erase-flash
+# To flash a standard ESP32 (uses port /dev/ttyUSB0)
+./flash.sh esp32
 
-# To flash new esp 32 micropython image
-uvx esptool --chip esp32 --port /dev/ttyUSB0 --baud 460800 write-flash -z 0x1000 ./config/iso/ESP32_GENERIC-20240222-v1.22.2.bin
-uvx esptool --chip esp32c3 --port /dev/ttyACM0 --baud 460800 write-flash -z 0x0 ./config/iso/ESP32_GENERIC_C3-20260406-v1.28.0.bin
+# To flash a standard ESP32 on specific manual port
+./flash.sh esp32 /dev/ttyUSB_custom
 ```
 
-## To open remote console
+## 📡 Code Deployment and Environment Variables
+
+The `upload.sh` script automates the deployment process by cleaning the board, generating a final `config.py` file from your secrets, and uploading the source files.
+
+**Requirements:**
+Ensure your application folder contains a `config.py.template` file using the `${VARIABLE}` syntax for your secrets.
+
+**Usage:** `./upload.sh <source_directory> <environment_file> [target_port]`
 
 ```bash
-# CTRL + X --> to quit console
-# CTRL + D --> to soft reboot
+# To deploy an application with a specific environment file
+./upload.sh ./led-switch .env.device_1
+
+# To deploy an application with a specific environment file on a custom serial port
+./upload.sh ./led-switch .env.device_2 /dev/ttyUSB_custom
+```
+
+>  📝 **Note :** If the specified environment file is missing, the script will automatically create it from `./config/.env.example` environnement file template.
+
+## ⌨️ Remote Console and Debugging
+
+After deployment, you can interact directly with the board through the remote console:
+
+```bash
+# To open remote ESP 32 console
 uvx mpremote
 ```
 
-## To upload new python files project
-
-```bash
-# To copy one file
-uvx mpremote cp main.py :main.py
-
-# To copy one folder
-cd test_on_off
-uvx mpremote fs cp -r . :
-
-# To copy + reboot
-uvx mpremote fs cp -r . : + soft-reset + repl
-```
+| Console Shortcut | Description |
+| :--- | :--- |
+| `CTRL + C` | 🛑 Stop the currently running Python program |
+| `CTRL + D` | 🔄 Perform a soft reboot of the microcontroller |
+| `CTRL + X` | 🚪 Safely exit the remote console |

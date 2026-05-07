@@ -1,1 +1,8 @@
 .venv
+.mypy_cache
+.ruff_cache
+
+config.py
+
+.env.*
+!.env.example

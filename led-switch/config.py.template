@@ -1,0 +1,15 @@
+WIFI_SSID = "${WIFI_SSID}"
+WIFI_PASSWORD = "${WIFI_PASSWORD}"
+
+MQTT_HOST = "${MQTT_HOST}"
+MQTT_PORT = ${MQTT_PORT}
+MQTT_USERNAME = "${MQTT_USERNAME}"
+MQTT_PASSWORD = "${MQTT_PASSWORD}"
+
+LED_ID = "${DEVICE_ID}"
+LED_PIN = 6
+BTN_PIN = 7
+
+# Same MQTT topic of FastAPI IOT API
+LED_COMMAND_TOPIC = "home/led/{}/set".format(LED_ID)
+LED_STATUS_TOPIC = "home/led/{}/status".format(LED_ID)
