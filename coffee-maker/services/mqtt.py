@@ -21,19 +21,32 @@ class MqttManager:
         self._client.connect()
         print("MQTT connected successfully.")
 
-    def subscribe(self, topic: str, message_callback):
+    def set_callback(self, message_callback):
         """
-        Sets the callback and subscribes to a specific topic.
+        Sets the callback function for subscribed topics.
         """
         self._client.set_callback(message_callback)
+        print("Add callback for subscribed topics")
+
+    def subscribe(self, topic: str):
+        """
+        Subscribes to a specific topic.
+        """
         self._client.subscribe(topic)
         print(f"Subscribed to topic: {topic}")
 
-    def publish(self, topic: str, payload: dict):
+    def unsubscribe(self, topic: str):
+        """
+        Unsubscribes to a specific topic.
+        """
+        self._client.unsubscribe(topic)
+        print(f"Unsubscribed to topic: {topic}")
+
+    def publish(self, topic: str, payload: dict, retain: bool = False):
         """
         Publishes a JSON-encoded payload to a specific topic.
         """
-        self._client.publish(topic, json.dumps(payload))
+        self._client.publish(topic, json.dumps(payload).encode("utf-8"), retain=retain)
 
     def check_for_messages(self):
         """

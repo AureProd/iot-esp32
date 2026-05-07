@@ -8,12 +8,12 @@ MQTT_PASSWORD = "${MQTT_PASSWORD}"
 
 COFFEE_MAKER_ID = "${DEVICE_ID}"
 
-LED_PIN = 7
-BTN_PIN = 6
-STATUS_PIN = 3
-CMD_PIN = 4
+READY_LED_PIN = 7
+READY_BTN_PIN = 6
+RUN_STATUS_PIN = 3
+RUN_CMD_PIN = 4
 
 # Same MQTT topic of FastAPI IOT API
 COFFEE_MAKER_COMMAND_TOPIC = "home/coffee/{}/set".format(COFFEE_MAKER_ID)
-COFFEE_MAKER_STATUS_TOPIC = "home/coffee/{}/status".format(COFFEE_MAKER_ID)
-COFFEE_MAKER_READY_TOPIC = "home/coffee/{}/ready".format(COFFEE_MAKER_ID)
+COFFEE_MAKER_RUN_STATUS_TOPIC = "home/coffee/{}/run/status".format(COFFEE_MAKER_ID)
+COFFEE_MAKER_READY_STATUS_TOPIC = "home/coffee/{}/ready/status".format(COFFEE_MAKER_ID)

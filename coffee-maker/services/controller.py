@@ -4,7 +4,7 @@ import json
 import time
 
 import machine
-import micropython
+from services.button import ButtonController
 from services.mqtt import MqttManager
 from services.wifi import WiFiManager
 
@@ -12,14 +12,14 @@ import config
 
 
 class CoffeeController:
-    BUTTON_DEBOUNCE_MS = 200
+    PUBLISH_STATUS_INTERVAL_MS = 180_000  # 3 minutes
 
     def __init__(self):
         # Hardware initialization
-        self.led = machine.Pin(config.LED_PIN, machine.Pin.OUT)
-        self.btn = machine.Pin(config.BTN_PIN, machine.Pin.IN, machine.Pin.PULL_UP)
-        self.cmd = machine.Pin(config.CMD_PIN, machine.Pin.OUT)
-        self.status = machine.Pin(config.STATUS_PIN, machine.Pin.IN, machine.Pin.PULL_UP)
+        self.ready_led = machine.Pin(config.READY_LED_PIN, machine.Pin.OUT)
+        self.ready_btn = ButtonController(config.READY_BTN_PIN, self.toggle_coffee_maker_ready_status)
+        self.run_cmd = machine.Pin(config.RUN_CMD_PIN, machine.Pin.OUT)
+        self.run_status = ButtonController(config.RUN_STATUS_PIN, self.toggle_coffee_maker_run_status)
 
         # Service initialization
         self.wifi = WiFiManager(config.WIFI_SSID, config.WIFI_PASSWORD)
@@ -27,106 +27,176 @@ class CoffeeController:
             config.COFFEE_MAKER_ID, config.MQTT_HOST, config.MQTT_PORT, config.MQTT_USERNAME, config.MQTT_PASSWORD
         )
 
-        self.wdt = machine.WDT(timeout=10000)
+        self.wdt = machine.WDT(timeout=10_000)
 
         # State variables (replacing global variables)
-        self.last_btn_press_time: int = 0
-        self.current_status: int = 0
+        self.last_publish_status_time = time.ticks_ms()
+        self.current_run_status = False
+        self.current_ready_status = False
 
-    def send_coffee_maker_cmd(self, _):
-        print(f"Update coffee maker status to '{not self.current_status}'.")
-        self.cmd.value(1)
+    def start_coffee_maker(self):
+        if not self.current_ready_status:
+            print("ERROR: Coffee-maker not ready to start")
+            raise RuntimeError("Coffee-maker not ready to start")
+
+        if self.current_run_status:
+            print("ERROR: Coffee-maker already started")
+            raise RuntimeError("Coffee-maker already started")
+
+        print("Start coffee maker")
+        self.run_cmd.value(1)
         time.sleep(0.2)
-        self.cmd.value(0)
-        time.sleep(0.3)
-        self.update_coffee_maker_status(not self.status.value())
+        self.run_cmd.value(0)
+        # time.sleep(0.3)
+        # self.update_coffee_maker_run_status(not self.run_status.value())
 
-    def handle_button(self, pin: machine.Pin):
-        current_ticks = time.ticks_ms()
-        duration = time.ticks_diff(current_ticks, self.last_btn_press_time)
+    def stop_coffee_maker(self):
+        if not self.current_run_status:
+            print("ERROR: Coffee-maker not started")
+            raise RuntimeError("Coffee-maker not started")
 
-        if duration >= self.BUTTON_DEBOUNCE_MS:
-            self.last_btn_press_time = current_ticks
-            micropython.schedule(self.send_coffee_maker_cmd, None)
+        print("Stop coffee maker")
+        self.run_cmd.value(1)
+        time.sleep(0.2)
+        self.run_cmd.value(0)
+        # time.sleep(0.3)
+        # self.update_coffee_maker_run_status(not self.run_status.value())
 
-    def update_coffee_maker_status(self, status: bool):
-        if status == self.current_status:
-            return
-        self.current_status = status
-
-        self.led.value(status)
-        print(f"Coffee maker status updated to '{status}'.")
-
-    def handle_status(self, pin: machine.Pin):
-        micropython.schedule(self.update_coffee_maker_status, not pin.value())
-
-    def handle_coffee_command(self, topic: bytes, msg: bytes):
+    def toggle_coffee_maker_run_status(self):
         try:
-            if len(msg) > 512:
-                return
+            self.update_coffee_maker_run_status(not self.run_status.value())
+        except OSError:
+            print("Offline: state changed locally but could not publish to MQTT.")
 
-            # Security: MicroPython umqtt returns bytes, they need to be decoded
-            payload: dict = json.loads(msg.decode("utf-8"))
-            # print(f"LED command received: '{payload}'.")
+    def toggle_coffee_maker_ready_status(self):
+        try:
+            self.update_coffee_maker_ready_status(not self.ready_led.value())
+        except OSError:
+            print("Offline: state changed locally but could not publish to MQTT.")
 
-            if isinstance(payload, dict) and "status" in payload:
-                new_val = 1 if payload["status"] in (1, True, "1") else 0
-                self.led.value(new_val)
-                self.publish_led_status()
-        except Exception as e:
-            print(f"Error handling command: {e}")
+    def update_coffee_maker_run_status(self, status: bool):
+        if status == self.current_run_status:
+            return
 
-    def ensure_connections(self) -> bool:
-        """Checks connection status and attempts to restore it if necessary."""
+        self.current_run_status = status
+        print(f"Save coffee maker run status: '{status}'")
+        self.mqtt.publish(config.COFFEE_MAKER_RUN_STATUS_TOPIC, {"status": status, "id": config.COFFEE_MAKER_ID})
+
+        if not status:
+            print("Reset coffee maker ready status when coffee maker stopped")
+            self.update_coffee_maker_ready_status(False)
+
+    def update_coffee_maker_ready_status(self, status: bool):
+        if status == self.current_ready_status:
+            return
+
+        self.current_ready_status = status
+        self.ready_led.value(status)
+        print(f"Save coffee maker ready status: '{status}'")
+        self.mqtt.publish(
+            config.COFFEE_MAKER_READY_STATUS_TOPIC, {"status": status, "id": config.COFFEE_MAKER_ID}, retain=True
+        )
+
+    def refresh_coffee_maker_status(self):
+        self.mqtt.publish(
+            config.COFFEE_MAKER_RUN_STATUS_TOPIC, {"status": not self.run_status.value(), "id": config.COFFEE_MAKER_ID}
+        )
+        self.mqtt.publish(
+            config.COFFEE_MAKER_READY_STATUS_TOPIC,
+            {"status": self.current_ready_status, "id": config.COFFEE_MAKER_ID},
+            retain=True,
+        )
+
+    def on_mqtt_message_received(self, encoded_topic: bytes, msg: bytes):
+        """
+        Simplified message processing.
+        Expects JSON like: {"status": 1} or {"status": True}
+        """
+        if len(msg) > 512:
+            return  # RAM Protection
+
+        try:
+            topic = encoded_topic.decode()
+            payload: dict = json.loads(msg)
+
+            if "status" in payload:
+                status = payload["status"] in (1, True, "1")
+
+                if topic == config.COFFEE_MAKER_COMMAND_TOPIC:
+                    if status:
+                        self.start_coffee_maker()
+                    else:
+                        self.stop_coffee_maker()
+
+                elif topic == config.COFFEE_MAKER_READY_STATUS_TOPIC:
+                    print(f"Read last coffee maker stored ready status: {status}")
+                    self.update_coffee_maker_ready_status(status)
+                    self.mqtt.unsubscribe(config.COFFEE_MAKER_READY_STATUS_TOPIC)
+        except (ValueError, KeyError):
+            print("Received invalid message format, ignoring.")
+
+    def connect_network(self):
+        """
+        Full connection sequence.
+        Raises OSError if any step fails, triggering the reconnection logic.
+        """
+        print("Establishing network connections...")
+
+        gc.collect()
+
+        # WiFiManager.connect() now raises OSError if it fails
         if not self.wifi.is_connected():
-            print("WiFi lost. Attempting to reconnect...")
-            if not self.wifi.connect(retries=2):
-                print("Unable to connect to WiFi at startup, restart...")
-                time.sleep(5)
-                machine.reset()
+            self.wifi.connect(retries=3)
 
-            # If WiFi reconnected, the MQTT client must be restarted
-            self.mqtt.disconnect()
-            if not self.mqtt.connect():
-                print("Unable to connect to MQTT at startup, restart...")
-                time.sleep(5)
-                machine.reset()
+        # Reset MQTT state and reconnect
+        self.mqtt.disconnect()
+        self.mqtt.connect()
+        self.mqtt.set_callback(self.on_mqtt_message_received)
 
-            # Resubscribe after reconnection
-            self.mqtt.subscribe(config.COFFEE_MAKER_COMMAND_TOPIC, self.handle_coffee_command)
+        self.mqtt.subscribe(config.COFFEE_MAKER_COMMAND_TOPIC)
 
-        current_ticks = time.time()
-        if current_ticks - self.last_ping > 30:
-            try:
-                self.mqtt.ping()
-                self.last_ping = current_ticks
-            except Exception:
-                print("Unable to ping MQTT server, restart...")
-                time.sleep(5)
-                machine.reset()
+        # Read last ready status of coffee maker
+        self.mqtt.subscribe(config.COFFEE_MAKER_READY_STATUS_TOPIC)
 
-        return True
+        print("System is online and ready.")
 
     def run(self):
-        print("Starting ESP32...")
+        """Main execution loop with automatic recovery."""
+        print("Starting ESP32 Application...")
 
-        self.cmd.value(0)
-        self.led.value(not self.status.value())
-
-        self.btn.irq(trigger=machine.Pin.IRQ_FALLING, handler=self.handle_button)
-        self.status.irq(trigger=machine.Pin.IRQ_FALLING | machine.Pin.IRQ_RISING, handler=self.handle_status)
-
-        print("ESP32 ready.")
-
-        # Main loop
+        # EXTERNAL LOOP: Handles reconnections
         while True:
             try:
-                gc.collect()  # Libère la RAM inutilisée à chaque cycle
-                self.wdt.feed()
+                # Try to connect. If this fails, it goes straight to 'except OSError'
+                self.connect_network()
 
-                time.sleep(1)
+                # INTERNAL LOOP: Normal operation
+                while True:
+                    self.wdt.feed()
+
+                    # check_for_messages() will raise OSError if the connection is lost
+                    self.mqtt.check_for_messages()
+
+                    # Periodic status update and keep-alive
+                    if (
+                        time.ticks_diff(time.ticks_ms(), self.last_publish_status_time)
+                        >= self.PUBLISH_STATUS_INTERVAL_MS
+                    ):
+                        self.mqtt.ping()  # Verifies if broker is still reachable
+                        self.refresh_coffee_maker_status()
+                        self.last_publish_status_time = time.ticks_ms()
+                        gc.collect()  # Safe periodic memory cleanup
+
+                    time.sleep(0.1)
+
+            except OSError as e:
+                # Catch-all for network issues (WiFi lost, MQTT timeout, etc.)
+                print(f"Network error detected: {e}. Retrying in 5 seconds...")
+                time.sleep(5)
+                # The external loop restarts and calls connect_network() again
+
             except Exception as e:
-                # Catch other unexpected errors to prevent a total crash
-                print(f"Unexpected error: {e}, restart...")
+                # Catch-all for fatal software errors
+                print(f"Critical error: {e}. Resetting device...")
                 time.sleep(2)
                 machine.reset()

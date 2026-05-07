@@ -50,3 +50,6 @@ class ButtonController:
 
                 # Reset press tracking
                 self._press_time = 0
+
+    def value(self) -> bool:
+        return self._btn.value() == 1
