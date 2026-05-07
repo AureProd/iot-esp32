@@ -4,7 +4,7 @@ This repository provides source code and utility scripts to flash MicroPython fi
 
 ## 💻 Local Environment Setup
 
-Follow these commands to prepare your local development environment:
+Follow these commands to prepare your local development environment :
 
 ```bash
 # To install Python dependencies using uv
@@ -55,7 +55,7 @@ Ensure your application folder contains a `config.py.template` file using the `$
 
 ## ⌨️ Remote Console and Debugging
 
-After deployment, you can interact directly with the board through the remote console:
+After deployment, you can interact directly with the board through the remote console :
 
 ```bash
 # To open remote ESP 32 console
