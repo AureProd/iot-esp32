@@ -66,6 +66,8 @@ class LEDController:
         """
         print("Establishing network connections...")
 
+        gc.collect()
+
         # WiFiManager.connect() now raises OSError if it fails
         if not self.wifi.is_connected():
             self.wifi.connect(retries=3)
@@ -73,8 +75,9 @@ class LEDController:
         # Reset MQTT state and reconnect
         self.mqtt.disconnect()
         self.mqtt.connect()
+        self.mqtt.set_callback(self.on_mqtt_message_received)
 
-        self.mqtt.subscribe(config.LED_COMMAND_TOPIC, self.on_mqtt_message_received)
+        self.mqtt.subscribe(config.LED_COMMAND_TOPIC)
         self.publish_led_status()
         print("System is online and ready.")
 
