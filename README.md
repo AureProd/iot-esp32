@@ -1,6 +1,6 @@
 # 🚀 ESP32 MicroPython Development Guide
 
-This repository provides source code and utility scripts to flash MicroPython firmware and deploy applications onto ESP32 and ESP32-C3 boards. 🛠️
+This repository provides source code and utility scripts to flash MicroPython firmware and deploy applications onto ESP32 and ESP32-C3 boards.
 
 ## 💻 Local Environment Setup
 
