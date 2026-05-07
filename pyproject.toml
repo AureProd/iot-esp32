@@ -18,6 +18,15 @@ dev = [
 [tool.uv]
 package = false
 
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+reportAttributeAccessIssue = "none"
+executionEnvironments = [
+    { root = "coffee-maker", extraPaths = ["coffee-maker", "coffee-maker/lib"] },
+    { root = "led-switch", extraPaths = ["led-switch", "led-switch/lib"] }
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
