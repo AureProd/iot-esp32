@@ -22,6 +22,7 @@ package = false
 venvPath = "."
 venv = ".venv"
 reportAttributeAccessIssue = "none"
+reportMissingModuleSource = "none"
 executionEnvironments = [
     { root = "coffee-maker", extraPaths = ["coffee-maker", "coffee-maker/lib"] },
     { root = "led-switch", extraPaths = ["led-switch", "led-switch/lib"] }
