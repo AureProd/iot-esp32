@@ -47,8 +47,8 @@ class CoffeeController:
         self.run_cmd.value(1)
         time.sleep(0.2)
         self.run_cmd.value(0)
-        # time.sleep(0.3)
-        # self.update_coffee_maker_run_status(not self.run_status.value())
+        time.sleep(0.3)
+        self.update_coffee_maker_run_status(not self.run_status.value())
 
     def stop_coffee_maker(self):
         if not self.current_run_status:
@@ -59,8 +59,8 @@ class CoffeeController:
         self.run_cmd.value(1)
         time.sleep(0.2)
         self.run_cmd.value(0)
-        # time.sleep(0.3)
-        # self.update_coffee_maker_run_status(not self.run_status.value())
+        time.sleep(0.3)
+        self.update_coffee_maker_run_status(not self.run_status.value())
 
     def toggle_coffee_maker_run_status(self):
         try:
@@ -79,11 +79,12 @@ class CoffeeController:
             return
 
         self.current_run_status = status
-        print(f"Save coffee maker run status: '{status}'")
+        print(f"Update coffee maker run status: '{status}'")
         self.mqtt.publish(config.COFFEE_MAKER_RUN_STATUS_TOPIC, {"status": status, "id": config.COFFEE_MAKER_ID})
 
         if not status:
-            print("Reset coffee maker ready status when coffee maker stopped")
+            time.sleep(0.3)
+            print("Reset coffee maker ready status when coffee maker started or stopped")
             self.update_coffee_maker_ready_status(False)
 
     def update_coffee_maker_ready_status(self, status: bool):
@@ -92,12 +93,15 @@ class CoffeeController:
 
         self.current_ready_status = status
         self.ready_led.value(status)
-        print(f"Save coffee maker ready status: '{status}'")
+        print(f"Update coffee maker ready status: '{status}'")
         self.mqtt.publish(
             config.COFFEE_MAKER_READY_STATUS_TOPIC, {"status": status, "id": config.COFFEE_MAKER_ID}, retain=True
         )
 
     def refresh_coffee_maker_status(self):
+        print(
+            f"Refresh coffee maker status: run status: '{not self.run_status.value()}', ready status: '{self.current_ready_status}'"
+        )
         self.mqtt.publish(
             config.COFFEE_MAKER_RUN_STATUS_TOPIC, {"status": not self.run_status.value(), "id": config.COFFEE_MAKER_ID}
         )
@@ -130,7 +134,8 @@ class CoffeeController:
 
                 elif topic == config.COFFEE_MAKER_READY_STATUS_TOPIC:
                     print(f"Read last coffee maker stored ready status: {status}")
-                    self.update_coffee_maker_ready_status(status)
+                    self.current_ready_status = status
+                    self.ready_led.value(status)
                     self.mqtt.unsubscribe(config.COFFEE_MAKER_READY_STATUS_TOPIC)
         except (ValueError, KeyError):
             print("Received invalid message format, ignoring.")
@@ -157,6 +162,13 @@ class CoffeeController:
 
         # Read last ready status of coffee maker
         self.mqtt.subscribe(config.COFFEE_MAKER_READY_STATUS_TOPIC)
+        print("Check last coffee maker ready status...")
+        self.mqtt.check_for_messages()
+
+        print(f"Update coffee maker run status: '{not self.run_status.value()}'")
+        self.mqtt.publish(
+            config.COFFEE_MAKER_RUN_STATUS_TOPIC, {"status": not self.run_status.value(), "id": config.COFFEE_MAKER_ID}
+        )
 
         print("System is online and ready.")
 
