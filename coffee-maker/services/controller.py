@@ -6,6 +6,7 @@ import time
 import machine
 from services.button import ButtonController
 from services.mqtt import MqttManager
+from services.optocoupler import OptocouplerController
 from services.wifi import WiFiManager
 
 import config
@@ -19,7 +20,7 @@ class CoffeeController:
         self.ready_led = machine.Pin(config.READY_LED_PIN, machine.Pin.OUT)
         self.ready_btn = ButtonController(config.READY_BTN_PIN, self.handle_ready_btn_click)
         self.run_cmd = machine.Pin(config.RUN_CMD_PIN, machine.Pin.OUT)
-        self.run_led = ButtonController(config.RUN_STATUS_PIN, self.handle_run_status)
+        self.run_led = OptocouplerController(config.RUN_STATUS_PIN, self.handle_run_status)
 
         # Service initialization
         self.wifi = WiFiManager(config.WIFI_SSID, config.WIFI_PASSWORD)
@@ -67,6 +68,8 @@ class CoffeeController:
             self.stop_coffee_maker()
         else:
             self.update_ready_status(not self.ready_status)
+            self.ready_led.value(self.ready_status)
+            self.publish_ready_status()
 
     def start_coffee_maker(self):
         if not self.ready_status:
@@ -83,6 +86,7 @@ class CoffeeController:
         time.sleep(0.2)
         self.run_cmd.value(0)
         time.sleep(0.3)
+        self.ready_led.value(1)
 
         self.update_ready_status(False)
         self.update_run_status(not self.run_led.value())
@@ -101,15 +105,18 @@ class CoffeeController:
         time.sleep(0.2)
         self.run_cmd.value(0)
         time.sleep(0.3)
+        self.ready_led.value(0)
 
         self.update_run_status(not self.run_led.value())
 
         self.publish_run_status()
 
     def handle_run_status(self):
-        if run_status := not self.run_led.value():
-            if self.ready_status:
-                self.update_ready_status(False)
+        run_status = not self.run_led.value()
+        if run_status and self.ready_status:
+            self.update_ready_status(False)
+
+        self.ready_led.value(run_status)
 
         self.update_run_status(run_status)
 
@@ -144,7 +151,9 @@ class CoffeeController:
 
                 elif topic == config.COFFEE_MAKER_READY_STATUS_TOPIC:
                     print(f"Read last coffee maker stored ready status: {status}")
-                    self.update_ready_status(status)
+                    if not self.run_status:
+                        self.update_ready_status(status)
+                        self.ready_led.value(status)
                     self.mqtt.unsubscribe(config.COFFEE_MAKER_READY_STATUS_TOPIC)
         except (ValueError, KeyError):
             print("Received invalid message format, ignoring.")
@@ -176,12 +185,16 @@ class CoffeeController:
 
         self.update_run_status(not self.run_led.value())
         self.publish_run_status()
+        if self.run_status:
+            self.ready_led.value(1)
 
         print("System is online and ready.")
 
     def run(self):
         """Main execution loop with automatic recovery."""
         print("Starting ESP32 Application...")
+
+        self.ready_led.value(0)
 
         # EXTERNAL LOOP: Handles reconnections
         while True:
