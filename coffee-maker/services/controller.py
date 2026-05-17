@@ -86,13 +86,17 @@ class CoffeeController:
         time.sleep(0.2)
         self.run_cmd.value(0)
         time.sleep(0.3)
-        self.ready_led.value(1)
 
         self.update_ready_status(False)
         self.update_run_status(not self.run_led.value())
+        self.ready_led.value(self.run_status)
 
         self.publish_ready_status()
         self.publish_run_status()
+
+        if not self.run_status:
+            print("Coffee-maker not started")
+            return
 
     def stop_coffee_maker(self):
         if not self.run_status:
