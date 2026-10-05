@@ -25,8 +25,8 @@ class LEDController:
             config.LED_ID, config.MQTT_HOST, config.MQTT_PORT, config.MQTT_USERNAME, config.MQTT_PASSWORD
         )
 
-        # Hardware Watchdog Timer (10 seconds timeout)
-        self.wdt = machine.WDT(timeout=10_000)
+        # Hardware Watchdog Timer (30 seconds timeout, leaves room for slow WiFi/TLS connections)
+        self.wdt = machine.WDT(timeout=30_000)
         self.last_publish_status_time = time.ticks_ms()
 
     def on_mqtt_message_received(self, topic: bytes, msg: bytes):
@@ -66,15 +66,18 @@ class LEDController:
         """
         print("Establishing network connections...")
 
+        self.wdt.feed()
         gc.collect()
 
-        # WiFiManager.connect() now raises OSError if it fails
+        # WiFiManager.connect() raises OSError if it fails
         if not self.wifi.is_connected():
-            self.wifi.connect(retries=3)
+            self.wifi.connect(retries=3, feed=self.wdt.feed)
 
         # Reset MQTT state and reconnect
         self.mqtt.disconnect()
+        self.wdt.feed()
         self.mqtt.connect()
+        self.wdt.feed()
         self.mqtt.set_callback(self.on_mqtt_message_received)
 
         self.mqtt.subscribe(config.LED_COMMAND_TOPIC)
@@ -113,7 +116,9 @@ class LEDController:
             except OSError as e:
                 # Catch-all for network issues (WiFi lost, MQTT timeout, etc.)
                 print(f"Network error detected: {e}. Retrying in 5 seconds...")
-                time.sleep(5)
+                for _ in range(10):
+                    self.wdt.feed()
+                    time.sleep(0.5)
                 # The external loop restarts and calls connect_network() again
 
             except Exception as e:

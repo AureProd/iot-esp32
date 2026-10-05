@@ -12,13 +12,14 @@ class MqttManager:
             client_id=client_id, server=host, port=port, user=username, password=password, ssl=True, ssl_params={}
         )
 
-    def connect(self):
+    def connect(self, timeout: int = 8):
         """
         Connects to the MQTT broker.
+        The socket timeout (seconds) prevents the TLS handshake from blocking forever.
         Exceptions raised by umqtt will propagate automatically.
         """
         print("Connecting to MQTT broker...")
-        self._client.connect()
+        self._client.connect(timeout=timeout)
         print("MQTT connected successfully.")
 
     def set_callback(self, message_callback):
@@ -72,3 +73,10 @@ class MqttManager:
             self._client.disconnect()
         except Exception:
             pass
+        # Always release the socket, even if the DISCONNECT packet could not be sent
+        if self._client.sock:
+            try:
+                self._client.sock.close()
+            except Exception:
+                pass
+            self._client.sock = None
