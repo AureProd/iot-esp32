@@ -16,60 +16,49 @@ class WiFiManager:
         # and use full transmit power
         self._wlan.config(pm=self._wlan.PM_NONE, txpower=20)
 
-    def _sleep(self, duration_ms: int, feed=None):
-        """Sleeps in small steps, feeding the watchdog if a feed callback is given."""
-        start_time = time.ticks_ms()
-        while time.ticks_diff(time.ticks_ms(), start_time) < duration_ms:
-            if feed:
-                feed()
-            time.sleep(0.5)
-
     def _reset_interface(self):
         """Stops any pending connection attempt so connect() can be called again."""
         try:
             self._wlan.disconnect()
         except OSError:
             pass
-        if self._wlan.status() == network.STAT_CONNECTING:
-            # Station is still stuck in "connecting" state: restart the interface
-            self._wlan.active(False)
-            time.sleep(0.5)
-            self._configure()
+        # Restart the interface: after a silent drop by the access point, the driver can stay
+        # stuck in "connecting" state, while a fresh interface reconnects within a few seconds
+        self._wlan.active(False)
+        time.sleep(0.5)
+        self._configure()
 
-    def connect(self, timeout_ms: int = 10_000, retries: int = 3, feed=None):
+    def connect(self, timeout_ms: int = 15_000, feed=None):
         """
         Attempts to connect to the WiFi network.
-        Raises an OSError if the connection fails after all retries.
+        Raises an OSError if the connection fails within timeout_ms.
         `feed` is an optional callback (e.g. watchdog feed) called while waiting.
+
+        Each call restarts the interface then lets the driver retry the association by itself
+        (failed WPA handshakes are common with a weak signal); the caller retries on failure.
         """
-        self._wlan.active(True)
+        if self._wlan.isconnected():
+            return
 
-        for attempt in range(retries):
-            if not self._wlan.isconnected():
-                print(f"WiFi connection attempt {attempt + 1}/{retries}...")
-                self._reset_interface()
-                try:
-                    self._wlan.connect(self.ssid, self.password)
-                except OSError as e:
-                    print(f"WiFi connect call failed: {e}")
-                else:
-                    start_time = time.ticks_ms()
-                    # Wait for connection or timeout
-                    while not self._wlan.isconnected() and time.ticks_diff(time.ticks_ms(), start_time) < timeout_ms:
-                        if feed:
-                            feed()
-                        time.sleep(0.5)
+        print("Connecting to WiFi...")
+        self._reset_interface()
+        try:
+            self._wlan.connect(self.ssid, self.password)
+        except OSError as e:
+            raise OSError(f"WiFi connect call failed: {e}")
 
-            if self._wlan.isconnected():
-                print("WiFi connected successfully.")
-                print("IP Address:", self._wlan.ifconfig()[0])
-                return  # Success, exit the function
+        start_time = time.ticks_ms()
+        while not self._wlan.isconnected() and time.ticks_diff(time.ticks_ms(), start_time) < timeout_ms:
+            if feed:
+                feed()
+            time.sleep(0.5)
 
-            print("WiFi connection attempt failed.")
-            self._sleep(2_000, feed)
+        if not self._wlan.isconnected():
+            raise OSError(f"Failed to connect to WiFi network (status={self._wlan.status()}).")
 
-        # If the loop finishes without returning, all retries failed
-        raise OSError("Failed to connect to WiFi network.")
+        elapsed_s = time.ticks_diff(time.ticks_ms(), start_time) // 1000
+        print(f"WiFi connected successfully in {elapsed_s}s.")
+        print("IP Address:", self._wlan.ifconfig()[0])
 
     def is_connected(self) -> bool:
         """Returns True if currently connected to the WiFi network."""

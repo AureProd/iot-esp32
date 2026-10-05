@@ -13,6 +13,7 @@ import config
 
 class LEDController:
     PUBLISH_STATUS_INTERVAL_MS = 180_000  # 3 minutes
+    PING_INTERVAL_MS = 15_000  # A dead MQTT connection is detected within ~1 minute
 
     def __init__(self):
         # Hardware initialization
@@ -28,6 +29,7 @@ class LEDController:
         # Hardware Watchdog Timer (30 seconds timeout, leaves room for slow WiFi/TLS connections)
         self.wdt = machine.WDT(timeout=30_000)
         self.last_publish_status_time = time.ticks_ms()
+        self.last_ping_time = time.ticks_ms()
 
     def on_mqtt_message_received(self, topic: bytes, msg: bytes):
         """
@@ -42,6 +44,7 @@ class LEDController:
             if "status" in payload:
                 # Set LED state: 1/True/"1" turns it ON, anything else turns it OFF
                 new_state = 1 if payload["status"] in (1, True, "1") else 0
+                print(f"Command received: status={new_state}")
                 self.led.value(new_state)
                 self.publish_led_status()
         except (ValueError, KeyError):
@@ -71,7 +74,7 @@ class LEDController:
 
         # WiFiManager.connect() raises OSError if it fails
         if not self.wifi.is_connected():
-            self.wifi.connect(retries=3, feed=self.wdt.feed)
+            self.wifi.connect(feed=self.wdt.feed)
 
         # Reset MQTT state and reconnect
         self.mqtt.disconnect()
@@ -82,6 +85,7 @@ class LEDController:
 
         self.mqtt.subscribe(config.LED_COMMAND_TOPIC)
         self.publish_led_status()
+        self.last_ping_time = time.ticks_ms()
         print("System is online and ready.")
 
     def run(self):
@@ -98,15 +102,22 @@ class LEDController:
                 while True:
                     self.wdt.feed()
 
+                    if not self.wifi.is_connected():
+                        raise OSError("WiFi connection lost")
+
                     # check_for_messages() will raise OSError if the connection is lost
                     self.mqtt.check_for_messages()
 
-                    # Periodic status update and keep-alive
+                    # Keep-alive: raises OSError if the broker stopped answering
+                    if time.ticks_diff(time.ticks_ms(), self.last_ping_time) >= self.PING_INTERVAL_MS:
+                        self.mqtt.ping()
+                        self.last_ping_time = time.ticks_ms()
+
+                    # Periodic status update
                     if (
                         time.ticks_diff(time.ticks_ms(), self.last_publish_status_time)
                         >= self.PUBLISH_STATUS_INTERVAL_MS
                     ):
-                        self.mqtt.ping()  # Verifies if broker is still reachable
                         self.publish_led_status()
                         self.last_publish_status_time = time.ticks_ms()
                         gc.collect()  # Safe periodic memory cleanup
@@ -116,6 +127,10 @@ class LEDController:
             except OSError as e:
                 # Catch-all for network issues (WiFi lost, MQTT timeout, etc.)
                 print(f"Network error detected: {e}. Retrying in 5 seconds...")
+                # The WiFi may look connected while the access point already dropped us:
+                # force a fresh association on the next attempt
+                self.mqtt.disconnect()
+                self.wifi.disconnect()
                 for _ in range(10):
                     self.wdt.feed()
                     time.sleep(0.5)
